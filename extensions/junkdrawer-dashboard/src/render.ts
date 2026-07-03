@@ -8,8 +8,6 @@
 // cards. Self-contained: all CSS and the tiny message-posting script are inline
 // under a nonce'd CSP.
 
-import { resolveCardValue } from './evaluate';
-import { MetricSource } from './metrics';
 import { Accent, DashModel } from './model';
 import { allowedOptions } from './types';
 
@@ -54,7 +52,7 @@ function renderControl(name: string, type: string, value: string, options: reado
 	return `<input class="control" type="text" id="${id}" data-var="${escapeHtml(name)}" value="${escapeHtml(value)}">`;
 }
 
-export function renderDashboard(model: DashModel, source: MetricSource, nonce: string): string {
+export function renderDashboard(model: DashModel, resolvedValues: string[], nonce: string): string {
 	const chips = model.variables.map(v => {
 		const label = escapeHtml(v.label ?? v.name);
 		const control = renderControl(v.name, v.type, v.value, allowedOptions(v), v.min, v.max, v.step);
@@ -62,8 +60,8 @@ export function renderDashboard(model: DashModel, source: MetricSource, nonce: s
 	}).join('');
 
 	const cards = model.cards.length
-		? model.cards.map(card => {
-			const value = resolveCardValue(card, model, source);
+		? model.cards.map((card, i) => {
+			const value = resolvedValues[i] ?? '';
 			return `
 			<div class="card">
 				<div class="card-label">${escapeHtml(card.label)}</div>

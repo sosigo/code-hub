@@ -10,6 +10,7 @@
 // .dash file, so the file is both the render target and the agent's context.
 
 import * as vscode from 'vscode';
+import { resolveCards } from './evaluate';
 import { mockMetricSource } from './metrics';
 import { DashCard, DashModel, emptyModel, parseModel, serializeModel } from './model';
 import { renderDashboard } from './render';
@@ -48,15 +49,28 @@ class DashboardEditorProvider implements vscode.CustomTextEditorProvider {
 		this._active = document;
 		webviewPanel.webview.options = { enableScripts: true };
 
-		const update = () => {
+		let renderToken = 0;
+		const update = async () => {
+			const token = ++renderToken;
 			const model = parseModel(document.getText());
-			webviewPanel.webview.html = renderDashboard(model, mockMetricSource, nonce());
+			// Paint an immediate skeleton (source-backed cards show a spinner value)
+			// so the panel is responsive while any HTTP fetches resolve.
+			const hasSource = model.cards.some(c => c.source);
+			if (hasSource) {
+				const skeleton = model.cards.map(c => c.source ? '…' : '');
+				webviewPanel.webview.html = renderDashboard(model, skeleton, nonce());
+			}
+			const values = await resolveCards(model, mockMetricSource);
+			if (token !== renderToken) {
+				return; // a newer update superseded this one
+			}
+			webviewPanel.webview.html = renderDashboard(model, values, nonce());
 		};
-		update();
+		void update();
 
 		const changeSub = vscode.workspace.onDidChangeTextDocument(e => {
 			if (e.document.uri.toString() === document.uri.toString()) {
-				update();
+				void update();
 			}
 		});
 
@@ -77,7 +91,7 @@ class DashboardEditorProvider implements vscode.CustomTextEditorProvider {
 				await writeModel(document, model);
 			} else {
 				vscode.window.showWarningMessage(`Junk Drawer: ${result.error ?? 'Invalid value.'}`);
-				update(); // revert the control to the stored value
+				void update(); // revert the control to the stored value
 			}
 		});
 

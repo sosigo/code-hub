@@ -8,6 +8,7 @@
 // value or a live metric), title and subtitle. Everything the agent needs to
 // read or change is here.
 
+import { HttpSource } from './http';
 import { VarType, VariableDef } from './types';
 
 export type Accent = 'green' | 'blue' | 'red' | 'neutral';
@@ -15,10 +16,12 @@ export type CardFormat = 'currency' | 'number' | 'percent' | 'plain';
 
 export interface DashCard {
 	label: string;
-	/** Static display value. Used when `metric` is absent. */
+	/** Static display value. Used when `metric` and `source` are absent. */
 	value?: string;
-	/** A live metric name resolved against the current variables. */
+	/** A live metric name resolved against the current variables (built-in mock source). */
 	metric?: string;
+	/** A live HTTP endpoint. Variables are substituted into the url. */
+	source?: HttpSource;
 	format?: CardFormat;
 	hint?: string;
 	/** Optional trend indicator, e.g. "+12%" or "-3%". */
@@ -73,10 +76,18 @@ function parseCard(raw: unknown): DashCard | undefined {
 		return undefined;
 	}
 	const o = raw as Record<string, unknown>;
+	let source: DashCard['source'];
+	if (o.source && typeof o.source === 'object') {
+		const s = o.source as Record<string, unknown>;
+		if (typeof s.url === 'string') {
+			source = { url: s.url, path: typeof s.path === 'string' ? s.path : undefined };
+		}
+	}
 	return {
 		label: String(o.label ?? ''),
 		value: o.value !== undefined ? String(o.value) : undefined,
 		metric: typeof o.metric === 'string' ? o.metric : undefined,
+		source,
 		format: FORMATS.includes(o.format as CardFormat) ? o.format as CardFormat : undefined,
 		hint: typeof o.hint === 'string' ? o.hint : undefined,
 		delta: typeof o.delta === 'string' ? o.delta : undefined,
@@ -125,6 +136,7 @@ export function serializeModel(model: DashModel): string {
 	out.cards = model.cards.map(c => {
 		const co: Record<string, unknown> = { label: c.label };
 		if (c.metric) { co.metric = c.metric; }
+		if (c.source) { co.source = c.source.path ? { url: c.source.url, path: c.source.path } : { url: c.source.url }; }
 		if (c.value !== undefined) { co.value = c.value; }
 		if (c.format) { co.format = c.format; }
 		if (c.hint) { co.hint = c.hint; }
