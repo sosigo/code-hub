@@ -2470,7 +2470,9 @@ registerWorkbenchContribution2(ChatQuotaNotificationContribution.ID, ChatQuotaNo
 registerWorkbenchContribution2(LocalAgentDisabledInputTipContribution.ID, LocalAgentDisabledInputTipContribution, WorkbenchPhase.AfterRestored);
 registerWorkbenchContribution2(HasByokModelsContribution.ID, HasByokModelsContribution, WorkbenchPhase.BlockRestore);
 registerWorkbenchContribution2(ChatTeardownContribution.ID, ChatTeardownContribution, WorkbenchPhase.AfterRestored);
-registerWorkbenchContribution2(ChatStatusBarEntry.ID, ChatStatusBarEntry, WorkbenchPhase.BlockRestore);
+// Junk Drawer: the chat status bar entry is a GitHub Copilot status/sign-in/quota
+// indicator - this fork has no Copilot, so it is not registered.
+void ChatStatusBarEntry;
 registerWorkbenchContribution2(BuiltinToolsContribution.ID, BuiltinToolsContribution, WorkbenchPhase.Eventually);
 registerWorkbenchContribution2(ClientToolSetsContribution.ID, ClientToolSetsContribution, WorkbenchPhase.Eventually);
 registerWorkbenchContribution2(UsagesToolContribution.ID, UsagesToolContribution, WorkbenchPhase.BlockRestore);

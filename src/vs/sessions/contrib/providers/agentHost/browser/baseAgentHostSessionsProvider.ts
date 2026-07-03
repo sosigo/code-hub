@@ -1900,6 +1900,11 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 	 * the welcome picker doesn't list Claude twice.
 	 */
 	protected _shouldAdvertiseAgent(_provider: string): boolean {
+		// Junk Drawer: this fork has no GitHub Copilot - never advertise the
+		// copilot agent-host provider in the Agents window picker.
+		if (_provider === 'copilotcli') {
+			return false;
+		}
 		return true;
 	}
 

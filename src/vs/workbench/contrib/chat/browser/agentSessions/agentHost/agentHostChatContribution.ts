@@ -175,6 +175,11 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 	 * to avoid Claude appearing twice in the same window.
 	 */
 	private _shouldRegisterAgent(provider: AgentProvider): boolean {
+		// Junk Drawer: this fork has no GitHub Copilot - never surface the
+		// copilot agent-host provider in any picker.
+		if (provider === 'copilotcli') {
+			return false;
+		}
 		return shouldSurfaceLocalAgentHostProvider(provider, this._configurationService, this._isSessionsWindow);
 	}
 

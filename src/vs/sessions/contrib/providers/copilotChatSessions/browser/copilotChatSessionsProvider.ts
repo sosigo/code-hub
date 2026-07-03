@@ -1472,11 +1472,9 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 	 * `chat.agentHost.enabled` is also on.
 	 */
 	private _isCopilotCliAvailable(): boolean {
-		const hideExtensionHost = this.configurationService.getValue<boolean>(ChatConfiguration.CopilotCliHideExtensionHostAgents) ?? false;
-		if (this.agentHostEnablementService.enabled && hideExtensionHost) {
-			return false;
-		}
-		return true;
+		// Junk Drawer: this fork has no GitHub Copilot - the extension-host
+		// Copilot CLI session type is never available.
+		return false;
 	}
 
 	readonly browseActions: readonly ISessionWorkspaceBrowseAction[];
