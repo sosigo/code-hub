@@ -21,7 +21,8 @@
 			}
 		],
 		"configurationDefaults": {
-			"workbench.colorTheme": "Junk Drawer Dark"
+			"workbench.colorTheme": "Junk Drawer Dark",
+			"workbench.startupEditor": "none"
 		}
 	},
 	"repository": {
