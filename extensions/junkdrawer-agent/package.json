@@ -23,6 +23,22 @@
 			{
 				"vendor": "ollama",
 				"displayName": "Ollama"
+			},
+			{
+				"vendor": "anthropic",
+				"displayName": "Anthropic"
+			}
+		],
+		"commands": [
+			{
+				"command": "junkdrawer.anthropic.setApiKey",
+				"title": "Set Anthropic API Key",
+				"category": "Junk Drawer"
+			},
+			{
+				"command": "junkdrawer.anthropic.clearApiKey",
+				"title": "Clear Anthropic API Key",
+				"category": "Junk Drawer"
 			}
 		],
 		"chatParticipants": [
