@@ -399,6 +399,16 @@ export class ExtHostLanguageModels implements ExtHostLanguageModelsShape {
 				break;
 			}
 		}
+		if (!defaultModelId) {
+			// Junk Drawer: no copilot default available - fall back to any user-selectable model
+			// (e.g. a local Ollama model) so chat works without Copilot.
+			for (const [modelIdentifier, modelData] of this._localModels) {
+				if (modelData.metadata.isUserSelectable !== false) {
+					defaultModelId = modelIdentifier;
+					break;
+				}
+			}
+		}
 		if (!defaultModelId && !forceResolveModels) {
 			// Maybe the default wasn't cached so we will try again with resolving the models too
 			return this.getDefaultLanguageModel(extension, true);

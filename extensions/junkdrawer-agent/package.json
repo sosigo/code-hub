@@ -1,0 +1,70 @@
+{
+	"name": "junkdrawer-agent",
+	"displayName": "Junk Drawer Agent",
+	"description": "Local-model chat agent for Junk Drawer Code",
+	"version": "1.0.0",
+	"publisher": "vscode",
+	"license": "MIT",
+	"engines": {
+		"vscode": "^1.5.0"
+	},
+	"main": "./out/extension",
+	"activationEvents": [
+		"onStartupFinished"
+	],
+	"capabilities": {
+		"virtualWorkspaces": true,
+		"untrustedWorkspaces": {
+			"supported": true
+		}
+	},
+	"contributes": {
+		"languageModelChatProviders": [
+			{
+				"vendor": "ollama",
+				"displayName": "Ollama"
+			}
+		],
+		"chatParticipants": [
+			{
+				"id": "junkdrawer.agent",
+				"name": "junk",
+				"fullName": "Junk Drawer",
+				"description": "Ask your local model anything",
+				"isSticky": true,
+				"commands": [
+					{
+						"name": "models",
+						"description": "List installed Ollama models"
+					}
+				]
+			}
+		],
+		"configuration": {
+			"title": "Junk Drawer Agent",
+			"properties": {
+				"junkdrawer.ollama.url": {
+					"type": "string",
+					"default": "http://localhost:11434",
+					"description": "Ollama server URL"
+				},
+				"junkdrawer.ollama.model": {
+					"type": "string",
+					"default": "llama3.2:3b",
+					"description": "Ollama model used by the @junk chat participant"
+				}
+			}
+		}
+	},
+	"scripts": {
+		"compile": "gulp compile-extension:junkdrawer-agent",
+		"watch": "gulp watch-extension:junkdrawer-agent"
+	},
+	"devDependencies": {
+		"@types/node": "24.x"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/sosigo/code-hub.git"
+	}
+}
