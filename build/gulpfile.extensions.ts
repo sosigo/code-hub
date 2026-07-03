@@ -285,10 +285,10 @@ export const compileNativeExtensionsBuildTask = task.define('compile-native-exte
 task.task(compileNativeExtensionsBuildTask);
 
 /**
- * Compiles the built-in copilot extension for the build.
- * Used by non-CI local builds where copilot is not downloaded as a VSIX.
+ * Junk Drawer: the copilot extension is removed from this fork; keep the task
+ * as a no-op so packaging build chains that reference it still run.
  */
-export const compileCopilotExtensionBuildTask = task.define('compile-copilot-extension-build', () => ext.packageCopilotExtensionStream(false).pipe(gulp.dest('.build')));
+export const compileCopilotExtensionBuildTask = task.define('compile-copilot-extension-build', () => Promise.resolve());
 task.task(compileCopilotExtensionBuildTask);
 
 /**

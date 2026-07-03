@@ -11,7 +11,8 @@ import tseslint from 'typescript-eslint';
 
 import stylisticTs from '@stylistic/eslint-plugin-ts';
 import * as pluginLocal from './.eslint-plugin-local/index.ts';
-import * as pluginCopilotLocal from './extensions/copilot/.eslintplugin/index.ts';
+// Junk Drawer: the copilot extension is removed from this fork; stub its eslint plugin.
+const pluginCopilotLocal = { rules: {} };
 import pluginImport from 'eslint-plugin-import';
 import pluginJsdoc from 'eslint-plugin-jsdoc';
 

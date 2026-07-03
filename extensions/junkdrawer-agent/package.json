@@ -9,6 +9,9 @@
 		"vscode": "^1.5.0"
 	},
 	"main": "./out/extension",
+	"enabledApiProposals": [
+		"defaultChatParticipant"
+	],
 	"activationEvents": [
 		"onStartupFinished"
 	],
@@ -47,6 +50,12 @@
 				"name": "junk",
 				"fullName": "Junk Drawer",
 				"description": "Ask your local model anything",
+				"isDefault": true,
+				"modes": [
+					"agent",
+					"ask",
+					"edit"
+				],
 				"isSticky": true,
 				"commands": [
 					{
