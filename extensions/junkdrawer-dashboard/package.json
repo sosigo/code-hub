@@ -1,0 +1,87 @@
+{
+	"name": "junkdrawer-dashboard",
+	"displayName": "Junk Drawer Dashboard",
+	"description": "Renders .dash files as command-center dashboards the agent can drive",
+	"version": "1.0.0",
+	"publisher": "vscode",
+	"license": "MIT",
+	"engines": {
+		"vscode": "^1.5.0"
+	},
+	"main": "./out/extension",
+	"activationEvents": [
+		"onStartupFinished"
+	],
+	"capabilities": {
+		"virtualWorkspaces": true,
+		"untrustedWorkspaces": {
+			"supported": true
+		}
+	},
+	"contributes": {
+		"customEditors": [
+			{
+				"viewType": "junkdrawer.dashboard",
+				"displayName": "Junk Drawer Dashboard",
+				"priority": "default",
+				"selector": [
+					{
+						"filenamePattern": "*.dash"
+					}
+				]
+			}
+		],
+		"languageModelTools": [
+			{
+				"name": "junkdrawer_updateDashboard",
+				"toolReferenceName": "updateDashboard",
+				"displayName": "Update Dashboard",
+				"modelDescription": "Update a Junk Drawer dashboard (.dash file). Use this to set the dashboard's title/subtitle or to add, replace, or clear its metric cards. Cards render as a grid of tiles, each with a label, a value, and an optional hint. Pass filePath to target a specific .dash file, or omit it to update the currently open dashboard.",
+				"canBeReferencedInPrompt": true,
+				"icon": "$(dashboard)",
+				"inputSchema": {
+					"type": "object",
+					"properties": {
+						"filePath": {
+							"type": "string",
+							"description": "Workspace-relative path to the .dash file to update. Omit to use the active dashboard."
+						},
+						"title": {
+							"type": "string",
+							"description": "New dashboard title (optional)."
+						},
+						"subtitle": {
+							"type": "string",
+							"description": "New dashboard subtitle (optional)."
+						},
+						"cards": {
+							"type": "array",
+							"description": "Metric cards to display. Replaces all existing cards when provided.",
+							"items": {
+								"type": "object",
+								"properties": {
+									"label": { "type": "string", "description": "Card label, e.g. 'Revenue'." },
+									"value": { "type": "string", "description": "Card value, e.g. '$1.2M'." },
+									"hint": { "type": "string", "description": "Optional small hint under the value." },
+									"accent": { "type": "string", "enum": ["green", "blue", "red", "neutral"], "description": "Accent color for the value." }
+								},
+								"required": ["label", "value"]
+							}
+						}
+					}
+				}
+			}
+		]
+	},
+	"scripts": {
+		"compile": "gulp compile-extension:junkdrawer-dashboard",
+		"watch": "gulp watch-extension:junkdrawer-dashboard"
+	},
+	"devDependencies": {
+		"@types/node": "24.x"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/sosigo/code-hub.git"
+	}
+}
