@@ -43,9 +43,31 @@ async function handleModelsCommand(stream: vscode.ChatResponseStream): Promise<v
 }
 
 async function handleChat(request: vscode.ChatRequest, context: vscode.ChatContext, stream: vscode.ChatResponseStream, token: vscode.CancellationToken): Promise<void> {
+	const history = historyToMessages(context);
+
+	// Preferred path: send through the model selected in the picker (works for
+	// any registered provider - Ollama, Anthropic, ...).
+	if (request.model) {
+		const lmMessages = history
+			.filter(m => m.role !== 'system')
+			.map(m => m.role === 'user'
+				? vscode.LanguageModelChatMessage.User(m.content)
+				: vscode.LanguageModelChatMessage.Assistant(m.content));
+		lmMessages.push(vscode.LanguageModelChatMessage.User(request.prompt));
+		try {
+			const response = await request.model.sendRequest(lmMessages, {}, token);
+			for await (const chunk of response.text) {
+				stream.markdown(chunk);
+			}
+			return;
+		} catch (err) {
+			stream.markdown(`Model \`${request.model.name}\` failed: ${err instanceof Error ? err.message : err}\n\nFalling back to local Ollama.\n\n`);
+		}
+	}
+
+	// Fallback: talk to Ollama directly using the configured model.
 	const { url, model } = getOllamaConfig();
-	const messages = historyToMessages(context);
-	messages.push({ role: 'user', content: request.prompt });
+	const messages = [...history, { role: 'user' as const, content: request.prompt }];
 	try {
 		await streamOllamaChat(url, model, messages, text => stream.markdown(text), token);
 	} catch (err) {
