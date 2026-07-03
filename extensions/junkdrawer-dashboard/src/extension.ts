@@ -3,12 +3,17 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-// Junk Drawer Dashboard - renders .dash files as command-center panels and
-// exposes an agent tool (junkdrawer_updateDashboard) so a chat agent can drive them.
+// Junk Drawer Dashboard - renders .dash files as command-center panels with an
+// interactive typed-variable bar, and exposes an agent tool
+// (junkdrawer_updateDashboard) so a chat agent can drive them. Everything the
+// agent needs - the variables, their allowed values, the metrics - lives in the
+// .dash file, so the file is both the render target and the agent's context.
 
 import * as vscode from 'vscode';
+import { mockMetricSource } from './metrics';
 import { DashCard, DashModel, emptyModel, parseModel, serializeModel } from './model';
 import { renderDashboard } from './render';
+import { allowedOptions, typeCatalog, validateValue, VariableDef } from './types';
 
 const VIEW_TYPE = 'junkdrawer.dashboard';
 
@@ -21,16 +26,22 @@ function nonce(): string {
 	return text;
 }
 
+/** Replace the whole document text with the serialized model. */
+async function writeModel(document: vscode.TextDocument, model: DashModel): Promise<void> {
+	const edit = new vscode.WorkspaceEdit();
+	const fullRange = new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length));
+	edit.replace(document.uri, fullRange, serializeModel(model));
+	await vscode.workspace.applyEdit(edit);
+}
+
 class DashboardEditorProvider implements vscode.CustomTextEditorProvider {
 
-	/** Tracks currently-open dashboards so the agent tool can target the active one. */
 	private readonly openDocuments = new Set<vscode.TextDocument>();
+	private _active: vscode.TextDocument | undefined;
 
 	get activeDocument(): vscode.TextDocument | undefined {
-		// Prefer the most recently focused dashboard.
 		return this._active ?? [...this.openDocuments][0];
 	}
-	private _active: vscode.TextDocument | undefined;
 
 	resolveCustomTextEditor(document: vscode.TextDocument, webviewPanel: vscode.WebviewPanel): void {
 		this.openDocuments.add(document);
@@ -39,7 +50,7 @@ class DashboardEditorProvider implements vscode.CustomTextEditorProvider {
 
 		const update = () => {
 			const model = parseModel(document.getText());
-			webviewPanel.webview.html = renderDashboard(model, nonce());
+			webviewPanel.webview.html = renderDashboard(model, mockMetricSource, nonce());
 		};
 		update();
 
@@ -48,6 +59,28 @@ class DashboardEditorProvider implements vscode.CustomTextEditorProvider {
 				update();
 			}
 		});
+
+		// Human changed a variable via a dropdown/input in the panel -> validate
+		// and write it back into the file (which re-renders).
+		const messageSub = webviewPanel.webview.onDidReceiveMessage(async (message: { type: string; name?: string; value?: string }) => {
+			if (message.type !== 'setVar' || !message.name) {
+				return;
+			}
+			const model = parseModel(document.getText());
+			const def = model.variables.find(v => v.name === message.name);
+			if (!def) {
+				return;
+			}
+			const result = validateValue(def, message.value ?? '');
+			if (result.ok && result.value !== undefined) {
+				def.value = result.value;
+				await writeModel(document, model);
+			} else {
+				vscode.window.showWarningMessage(`Junk Drawer: ${result.error ?? 'Invalid value.'}`);
+				update(); // revert the control to the stored value
+			}
+		});
+
 		webviewPanel.onDidChangeViewState(e => {
 			if (e.webviewPanel.active) {
 				this._active = document;
@@ -55,6 +88,7 @@ class DashboardEditorProvider implements vscode.CustomTextEditorProvider {
 		});
 		webviewPanel.onDidDispose(() => {
 			changeSub.dispose();
+			messageSub.dispose();
 			this.openDocuments.delete(document);
 			if (this._active === document) {
 				this._active = undefined;
@@ -67,16 +101,9 @@ interface UpdateInput {
 	filePath?: string;
 	title?: string;
 	subtitle?: string;
+	variables?: VariableDef[];
+	setVariables?: Record<string, string>;
 	cards?: DashCard[];
-}
-
-/** Applies the tool input to a dashboard model. */
-function applyUpdate(current: DashModel, input: UpdateInput): DashModel {
-	return {
-		title: input.title ?? current.title,
-		subtitle: input.subtitle ?? current.subtitle,
-		cards: input.cards ?? current.cards,
-	};
 }
 
 class UpdateDashboardTool implements vscode.LanguageModelTool<UpdateInput> {
@@ -85,11 +112,9 @@ class UpdateDashboardTool implements vscode.LanguageModelTool<UpdateInput> {
 
 	private async resolveTarget(input: UpdateInput): Promise<vscode.TextDocument | undefined> {
 		if (input.filePath) {
-			const folders = vscode.workspace.workspaceFolders ?? [];
-			for (const folder of folders) {
-				const uri = vscode.Uri.joinPath(folder.uri, input.filePath);
+			for (const folder of vscode.workspace.workspaceFolders ?? []) {
 				try {
-					return await vscode.workspace.openTextDocument(uri);
+					return await vscode.workspace.openTextDocument(vscode.Uri.joinPath(folder.uri, input.filePath));
 				} catch {
 					// try next folder
 				}
@@ -107,16 +132,37 @@ class UpdateDashboardTool implements vscode.LanguageModelTool<UpdateInput> {
 				'No dashboard is open. Open a .dash file first, or pass filePath to a .dash file in the workspace.')]);
 		}
 
-		const current = document.getText().trim() ? parseModel(document.getText()) : emptyModel();
-		const next = applyUpdate(current, input);
+		const model = document.getText().trim() ? parseModel(document.getText()) : emptyModel();
 
-		const edit = new vscode.WorkspaceEdit();
-		const fullRange = new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length));
-		edit.replace(document.uri, fullRange, serializeModel(next));
-		await vscode.workspace.applyEdit(edit);
+		if (input.title !== undefined) { model.title = input.title; }
+		if (input.subtitle !== undefined) { model.subtitle = input.subtitle; }
+		if (input.variables) { model.variables = input.variables; }
+		if (input.cards) { model.cards = input.cards; }
 
-		return new vscode.LanguageModelToolResult([new vscode.LanguageModelTextPart(
-			`Updated dashboard "${next.title}" with ${next.cards.length} card(s).`)]);
+		// Patch individual variable values, validated against their declared type.
+		const errors: string[] = [];
+		if (input.setVariables) {
+			for (const [name, value] of Object.entries(input.setVariables)) {
+				const def = model.variables.find(v => v.name === name);
+				if (!def) {
+					errors.push(`Unknown variable "${name}". Declared variables: ${model.variables.map(v => v.name).join(', ') || '(none)'}.`);
+					continue;
+				}
+				const result = validateValue(def, value);
+				if (result.ok && result.value !== undefined) {
+					def.value = result.value;
+				} else {
+					const allowed = result.allowed ?? allowedOptions(def)?.map(o => o.value) ?? [];
+					errors.push(`${result.error ?? `Invalid value for ${name}.`}${allowed.length ? ` Allowed: ${allowed.join(', ')}.` : ''}`);
+				}
+			}
+		}
+
+		await writeModel(document, model);
+
+		const summary = `Updated dashboard "${model.title}": ${model.variables.length} variable(s), ${model.cards.length} card(s).`;
+		const text = errors.length ? `${summary}\nSome changes were rejected:\n- ${errors.join('\n- ')}` : summary;
+		return new vscode.LanguageModelToolResult([new vscode.LanguageModelTextPart(text)]);
 	}
 
 	prepareInvocation(_options: vscode.LanguageModelToolInvocationPrepareOptions<UpdateInput>): vscode.PreparedToolInvocation {
@@ -131,6 +177,9 @@ export function activate(context: vscode.ExtensionContext) {
 		supportsMultipleEditorsPerDocument: false,
 	}));
 	context.subscriptions.push(vscode.lm.registerTool('junkdrawer_updateDashboard', new UpdateDashboardTool(provider)));
+
+	// Surface the typed-variable catalog once for logs / debugging.
+	void typeCatalog();
 }
 
 export function deactivate() { }

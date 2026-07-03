@@ -36,7 +36,7 @@
 				"name": "junkdrawer_updateDashboard",
 				"toolReferenceName": "updateDashboard",
 				"displayName": "Update Dashboard",
-				"modelDescription": "Update a Junk Drawer dashboard (.dash file). Use this to set the dashboard's title/subtitle or to add, replace, or clear its metric cards. Cards render as a grid of tiles, each with a label, a value, and an optional hint. Pass filePath to target a specific .dash file, or omit it to update the currently open dashboard.",
+				"modelDescription": "Update a Junk Drawer dashboard (.dash file). A dashboard has TYPED VARIABLES (declared in the file, shown as filter chips) and CARDS (metric tiles). Cards are either static (a fixed 'value') or live (a 'metric' name resolved against the current variables and formatted per 'format'). Read the .dash file first to see its declared variables and their current values - everything you need is in that file. Use setVariables to change a variable's value (the most common action, e.g. change the time window or currency); use 'variables' to declare/replace the variable list; use 'cards' to replace all cards; use title/subtitle to rename. Pass filePath for a specific file or omit it for the active dashboard. Typed variable values are validated - allowed values: period (a time window) is one of 5m, 15m, 1h, 6h, 24h, 7d, 14d, 30d, 90d, mtd, qtd, ytd, 12mo, all; currency is one of USD, EUR, GBP, JPY, CAD, AUD, CHF, CNY, INR, BRL, MXN, BTC, ETH; enum is one of its declared options; number is any number within min/max; boolean is true/false; string is free text.",
 				"canBeReferencedInPrompt": true,
 				"icon": "$(dashboard)",
 				"inputSchema": {
@@ -46,13 +46,34 @@
 							"type": "string",
 							"description": "Workspace-relative path to the .dash file to update. Omit to use the active dashboard."
 						},
-						"title": {
-							"type": "string",
-							"description": "New dashboard title (optional)."
+						"title": { "type": "string", "description": "New dashboard title (optional)." },
+						"subtitle": { "type": "string", "description": "New dashboard subtitle (optional)." },
+						"setVariables": {
+							"type": "object",
+							"description": "Patch the values of existing declared variables, e.g. {\"period\":\"90d\",\"currency\":\"EUR\"}. Values are validated against each variable's type.",
+							"additionalProperties": { "type": "string" }
 						},
-						"subtitle": {
-							"type": "string",
-							"description": "New dashboard subtitle (optional)."
+						"variables": {
+							"type": "array",
+							"description": "Declare/replace the full list of typed variables. Each renders as a filter chip.",
+							"items": {
+								"type": "object",
+								"properties": {
+									"name": { "type": "string", "description": "Variable name, referenced by cards/queries." },
+									"type": { "type": "string", "enum": ["period", "currency", "enum", "number", "boolean", "string"], "description": "Variable type. period and currency have built-in allowed values." },
+									"value": { "type": "string", "description": "Current value." },
+									"label": { "type": "string", "description": "Optional display label for the chip." },
+									"options": {
+										"type": "array",
+										"description": "Allowed options for an 'enum' type.",
+										"items": { "type": "object", "properties": { "value": { "type": "string" }, "label": { "type": "string" } }, "required": ["value"] }
+									},
+									"min": { "type": "number", "description": "Minimum for a 'number' type." },
+									"max": { "type": "number", "description": "Maximum for a 'number' type." },
+									"step": { "type": "number", "description": "Step for a 'number' type." }
+								},
+								"required": ["name", "type", "value"]
+							}
 						},
 						"cards": {
 							"type": "array",
@@ -61,11 +82,14 @@
 								"type": "object",
 								"properties": {
 									"label": { "type": "string", "description": "Card label, e.g. 'Revenue'." },
-									"value": { "type": "string", "description": "Card value, e.g. '$1.2M'." },
+									"metric": { "type": "string", "description": "Live metric name resolved against the variables (e.g. mrr, arr, revenue, users, signups, sessions, mau, churn, conversion, nps, or any custom name). Omit for a static card." },
+									"value": { "type": "string", "description": "Static value, e.g. '$1.2M'. Used when 'metric' is omitted." },
+									"format": { "type": "string", "enum": ["currency", "number", "percent", "plain"], "description": "How to format a live metric value. Currency uses the dashboard's currency variable." },
 									"hint": { "type": "string", "description": "Optional small hint under the value." },
+									"delta": { "type": "string", "description": "Optional trend, e.g. '+12%' (green) or '-3%' (red)." },
 									"accent": { "type": "string", "enum": ["green", "blue", "red", "neutral"], "description": "Accent color for the value." }
 								},
-								"required": ["label", "value"]
+								"required": ["label"]
 							}
 						}
 					}
