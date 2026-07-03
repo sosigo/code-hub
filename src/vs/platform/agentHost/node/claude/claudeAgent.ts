@@ -476,7 +476,8 @@ export class ClaudeAgent extends Disposable implements IAgent {
 
 	private _resolveTransportMode(): 'proxy' | 'native' {
 		// Defaults to proxied when the `claudeUseCopilotProxy` root value is unset.
-		const useProxy = this._configurationService.getRootValue(agentHostCustomizationConfigSchema, AgentHostConfigKey.ClaudeUseCopilotProxy) ?? true;
+		// Junk Drawer: default to native (BYO-Anthropic) - this fork has no Copilot to proxy through.
+		const useProxy = this._configurationService.getRootValue(agentHostCustomizationConfigSchema, AgentHostConfigKey.ClaudeUseCopilotProxy) ?? false;
 		return useProxy ? 'proxy' : 'native';
 	}
 

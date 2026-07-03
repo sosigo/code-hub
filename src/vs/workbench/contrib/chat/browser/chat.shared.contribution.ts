@@ -776,14 +776,14 @@ configurationRegistry.registerConfiguration({
 		[ClaudePreferAgentHostAgentsSettingId]: {
 			type: 'boolean',
 			markdownDescription: nls.localize('chat.agents.claude.preferAgentHost', "When enabled, Claude sessions opened from the Agents Window run inside the agent host process instead of the GitHub Copilot Chat extension. Only one Claude implementation surfaces per window. Requires `#{0}#`.", AgentHostEnabledSettingId),
-			default: false,
+			default: true, // Junk Drawer: no Copilot extension in this fork - agent host owns Claude,
 			tags: ['experimental'],
 			experiment: { mode: 'startup' },
 		},
 		[ClaudePreferAgentHostEditorSettingId]: {
 			type: 'boolean',
 			description: nls.localize('chat.editor.claude.preferAgentHost', "When enabled, Claude sessions opened from the regular workbench (sidebar chat) run inside the agent host process instead of the GitHub Copilot Chat extension. Only one Claude implementation surfaces per window."),
-			default: false,
+			default: true, // Junk Drawer: no Copilot extension in this fork - agent host owns Claude,
 			tags: ['experimental'],
 			experiment: { mode: 'startup' },
 		},
