@@ -1,0 +1,31 @@
+{
+	"name": "junkdrawer-theme",
+	"displayName": "Junk Drawer Theme",
+	"description": "Default color theme for Junk Drawer Code",
+	"version": "1.0.0",
+	"publisher": "vscode",
+	"license": "MIT",
+	"engines": {
+		"vscode": "*"
+	},
+	"categories": [
+		"Themes"
+	],
+	"contributes": {
+		"themes": [
+			{
+				"id": "Junk Drawer Dark",
+				"label": "Junk Drawer Dark",
+				"uiTheme": "vs-dark",
+				"path": "./themes/junkdrawer-dark.json"
+			}
+		],
+		"configurationDefaults": {
+			"workbench.colorTheme": "Junk Drawer Dark"
+		}
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/sosigo/code-hub.git"
+	}
+}

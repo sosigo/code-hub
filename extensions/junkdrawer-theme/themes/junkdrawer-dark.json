@@ -1,0 +1,27 @@
+{
+	"$schema": "vscode://schemas/color-theme",
+	"name": "Junk Drawer Dark",
+	"include": "./2026-dark.json",
+	"colors": {
+		"focusBorder": "#3FB95099",
+		"progressBar.background": "#3FB950",
+		"button.background": "#238636",
+		"button.foreground": "#FFFFFF",
+		"button.hoverBackground": "#2EA043",
+		"badge.background": "#238636",
+		"badge.foreground": "#FFFFFF",
+		"activityBarBadge.background": "#238636",
+		"activityBarBadge.foreground": "#FFFFFF",
+		"activityBar.activeBorder": "#3FB950",
+		"statusBarItem.remoteBackground": "#238636",
+		"statusBarItem.remoteForeground": "#FFFFFF",
+		"panelTitle.activeBorder": "#3FB950",
+		"tab.activeBorderTop": "#3FB950",
+		"inputOption.activeBorder": "#3FB950",
+		"list.highlightForeground": "#3FB950",
+		"editorLink.activeForeground": "#4DAAFC",
+		"textLink.foreground": "#4DAAFC",
+		"terminal.tab.activeBorder": "#3FB950",
+		"welcomePage.progress.foreground": "#3FB950"
+	}
+}
