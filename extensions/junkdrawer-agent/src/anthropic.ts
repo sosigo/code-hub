@@ -8,7 +8,7 @@
 // matching the Ollama provider. The API key lives in SecretStorage (OS keychain).
 
 import * as vscode from 'vscode';
-import { SimpleMessage, estimateTokens, toSimpleMessages } from './messages';
+import { convertMessages, estimateTokens } from './messages';
 
 const API_KEY_SECRET = 'junkdrawer.anthropic.apiKey';
 const API_BASE = 'https://api.anthropic.com';
@@ -24,11 +24,22 @@ interface AnthropicModel {
 	};
 }
 
+type AnthropicContentBlock =
+	| { type: 'text'; text: string }
+	| { type: 'tool_use'; id: string; name: string; input: object }
+	| { type: 'tool_result'; tool_use_id: string; content: string };
+
+interface AnthropicMessage {
+	role: 'user' | 'assistant';
+	content: AnthropicContentBlock[];
+}
+
 interface AnthropicSseEvent {
 	type: string;
-	delta?: { type: string; text?: string; stop_reason?: string };
+	index?: number;
+	content_block?: { type: string; id?: string; name?: string };
+	delta?: { type: string; text?: string; partial_json?: string; stop_reason?: string };
 	error?: { type: string; message: string };
-	message?: { stop_reason?: string };
 }
 
 export class AnthropicChatProvider implements vscode.LanguageModelChatProvider {
@@ -114,15 +125,48 @@ export class AnthropicChatProvider implements vscode.LanguageModelChatProvider {
 			}));
 	}
 
-	async provideLanguageModelChatResponse(model: vscode.LanguageModelChatInformation, messages: readonly vscode.LanguageModelChatRequestMessage[], _options: vscode.ProvideLanguageModelChatResponseOptions, progress: vscode.Progress<vscode.LanguageModelResponsePart>, token: vscode.CancellationToken): Promise<void> {
+	private toAnthropicMessages(messages: readonly vscode.LanguageModelChatRequestMessage[]): { system: string; conversation: AnthropicMessage[] } {
+		const converted = convertMessages(messages);
+		const system = converted.filter(m => m.role === 'system').map(m => m.text).join('\n\n');
+		const conversation: AnthropicMessage[] = [];
+		for (const message of converted) {
+			if (message.role === 'system') {
+				continue;
+			}
+			const content: AnthropicContentBlock[] = [];
+			if (message.role === 'user') {
+				// Anthropic requires tool_result blocks to lead the user message.
+				for (const result of message.toolResults) {
+					content.push({ type: 'tool_result', tool_use_id: result.callId, content: result.content });
+				}
+			}
+			if (message.text) {
+				content.push({ type: 'text', text: message.text });
+			}
+			if (message.role === 'assistant') {
+				for (const call of message.toolCalls) {
+					content.push({ type: 'tool_use', id: call.id, name: call.name, input: call.input });
+				}
+			}
+			if (content.length) {
+				conversation.push({ role: message.role, content });
+			}
+		}
+		return { system, conversation };
+	}
+
+	async provideLanguageModelChatResponse(model: vscode.LanguageModelChatInformation, messages: readonly vscode.LanguageModelChatRequestMessage[], options: vscode.ProvideLanguageModelChatResponseOptions, progress: vscode.Progress<vscode.LanguageModelResponsePart>, token: vscode.CancellationToken): Promise<void> {
 		const apiKey = await this.getApiKey();
 		if (!apiKey) {
 			throw new Error('No Anthropic API key set. Run "Junk Drawer: Set Anthropic API Key".');
 		}
 
-		const simple = toSimpleMessages(messages);
-		const system = simple.filter(m => m.role === 'system').map(m => m.content).join('\n\n');
-		const conversation: SimpleMessage[] = simple.filter(m => m.role !== 'system');
+		const { system, conversation } = this.toAnthropicMessages(messages);
+		const tools = options.tools?.map(t => ({
+			name: t.name,
+			description: t.description,
+			input_schema: t.inputSchema ?? { type: 'object', properties: {} },
+		}));
 
 		const response = await fetch(`${API_BASE}/v1/messages`, {
 			method: 'POST',
@@ -136,6 +180,8 @@ export class AnthropicChatProvider implements vscode.LanguageModelChatProvider {
 				max_tokens: Math.min(model.maxOutputTokens, 64000),
 				stream: true,
 				...(system ? { system } : {}),
+				...(tools?.length ? { tools } : {}),
+				...(tools?.length && options.toolMode === vscode.LanguageModelChatToolMode.Required ? { tool_choice: { type: 'any' } } : {}),
 				messages: conversation,
 			}),
 		});
@@ -148,6 +194,7 @@ export class AnthropicChatProvider implements vscode.LanguageModelChatProvider {
 		const decoder = new TextDecoder();
 		let buffered = '';
 		let stopReason: string | undefined;
+		const openToolCalls = new Map<number, { id: string; name: string; json: string }>();
 		while (!token.isCancellationRequested) {
 			const { done, value } = await reader.read();
 			if (done) {
@@ -166,14 +213,42 @@ export class AnthropicChatProvider implements vscode.LanguageModelChatProvider {
 				} catch {
 					continue;
 				}
-				if (event.type === 'error' && event.error) {
-					throw new Error(`Anthropic error: ${event.error.message}`);
-				}
-				if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta' && event.delta.text) {
-					progress.report(new vscode.LanguageModelTextPart(event.delta.text));
-				}
-				if (event.type === 'message_delta' && event.delta?.stop_reason) {
-					stopReason = event.delta.stop_reason;
+				switch (event.type) {
+					case 'error':
+						throw new Error(`Anthropic error: ${event.error?.message}`);
+					case 'content_block_start':
+						if (event.content_block?.type === 'tool_use' && event.index !== undefined) {
+							openToolCalls.set(event.index, { id: event.content_block.id ?? `call_${event.index}`, name: event.content_block.name ?? '', json: '' });
+						}
+						break;
+					case 'content_block_delta':
+						if (event.delta?.type === 'text_delta' && event.delta.text) {
+							progress.report(new vscode.LanguageModelTextPart(event.delta.text));
+						} else if (event.delta?.type === 'input_json_delta' && event.index !== undefined) {
+							const call = openToolCalls.get(event.index);
+							if (call) {
+								call.json += event.delta.partial_json ?? '';
+							}
+						}
+						break;
+					case 'content_block_stop':
+						if (event.index !== undefined && openToolCalls.has(event.index)) {
+							const call = openToolCalls.get(event.index)!;
+							openToolCalls.delete(event.index);
+							let input: object = {};
+							try {
+								input = call.json ? JSON.parse(call.json) : {};
+							} catch {
+								// leave input empty on malformed JSON
+							}
+							progress.report(new vscode.LanguageModelToolCallPart(call.id, call.name, input));
+						}
+						break;
+					case 'message_delta':
+						if (event.delta?.stop_reason) {
+							stopReason = event.delta.stop_reason;
+						}
+						break;
 				}
 			}
 		}

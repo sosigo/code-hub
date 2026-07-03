@@ -3,14 +3,15 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-// Junk Drawer Agent - @junk chat participant plus Ollama (local) and Anthropic
-// (hosted) language model providers for the native model picker.
+// Junk Drawer Agent - default chat participant with an agentic tool loop, plus
+// Ollama (local) and Anthropic (hosted) language model providers.
 
 import * as vscode from 'vscode';
 import { AnthropicChatProvider } from './anthropic';
-import { OllamaChatProvider, cannotReachOllama, getOllamaConfig, listOllamaModels, streamOllamaChat } from './ollama';
+import { OllamaChatProvider, cannotReachOllama, getOllamaConfig, listOllamaModels, simpleToOllamaMessages, streamOllamaChat } from './ollama';
 
 const PARTICIPANT_ID = 'junkdrawer.agent';
+const MAX_TOOL_ROUNDS = 25;
 
 function historyToMessages(context: vscode.ChatContext): { role: 'user' | 'assistant' | 'system'; content: string }[] {
 	const messages: { role: 'user' | 'assistant' | 'system'; content: string }[] = [];
@@ -42,34 +43,95 @@ async function handleModelsCommand(stream: vscode.ChatResponseStream): Promise<v
 	}
 }
 
-async function handleChat(request: vscode.ChatRequest, context: vscode.ChatContext, stream: vscode.ChatResponseStream, token: vscode.CancellationToken): Promise<void> {
-	const history = historyToMessages(context);
+function availableTools(): vscode.LanguageModelChatTool[] {
+	return vscode.lm.tools.map(tool => ({
+		name: tool.name,
+		description: tool.description,
+		inputSchema: tool.inputSchema,
+	}));
+}
 
-	// Preferred path: send through the model selected in the picker (works for
-	// any registered provider - Ollama, Anthropic, ...).
-	if (request.model) {
-		const lmMessages = history
-			.filter(m => m.role !== 'system')
-			.map(m => m.role === 'user'
-				? vscode.LanguageModelChatMessage.User(m.content)
-				: vscode.LanguageModelChatMessage.Assistant(m.content));
-		lmMessages.push(vscode.LanguageModelChatMessage.User(request.prompt));
-		try {
-			const response = await request.model.sendRequest(lmMessages, {}, token);
-			for await (const chunk of response.text) {
-				stream.markdown(chunk);
+async function invokeToolSafely(call: vscode.LanguageModelToolCallPart, request: vscode.ChatRequest, token: vscode.CancellationToken): Promise<vscode.LanguageModelToolResultPart> {
+	try {
+		const result = await vscode.lm.invokeTool(call.name, {
+			input: call.input,
+			toolInvocationToken: request.toolInvocationToken,
+		}, token);
+		return new vscode.LanguageModelToolResultPart(call.callId, [...result.content]);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		return new vscode.LanguageModelToolResultPart(call.callId, [new vscode.LanguageModelTextPart(`Tool failed: ${message}`)]);
+	}
+}
+
+/**
+ * The agentic loop: send the conversation to the selected model with all
+ * registered tools; invoke any tool calls it makes and feed the results back
+ * until the model answers with plain text.
+ */
+async function runAgentLoop(request: vscode.ChatRequest, context: vscode.ChatContext, stream: vscode.ChatResponseStream, token: vscode.CancellationToken): Promise<void> {
+	const lmMessages: vscode.LanguageModelChatMessage[] = historyToMessages(context)
+		.filter(m => m.role !== 'system')
+		.map(m => m.role === 'user'
+			? vscode.LanguageModelChatMessage.User(m.content)
+			: vscode.LanguageModelChatMessage.Assistant(m.content));
+	lmMessages.push(vscode.LanguageModelChatMessage.User(request.prompt));
+
+	const tools = availableTools();
+
+	for (let round = 0; round < MAX_TOOL_ROUNDS && !token.isCancellationRequested; round++) {
+		const response = await request.model.sendRequest(lmMessages, { tools, toolMode: vscode.LanguageModelChatToolMode.Auto }, token);
+
+		let responseText = '';
+		const toolCalls: vscode.LanguageModelToolCallPart[] = [];
+		for await (const part of response.stream) {
+			if (part instanceof vscode.LanguageModelTextPart) {
+				responseText += part.value;
+				stream.markdown(part.value);
+			} else if (part instanceof vscode.LanguageModelToolCallPart) {
+				toolCalls.push(part);
 			}
+		}
+
+		if (!toolCalls.length) {
+			return;
+		}
+
+		const assistantParts: (vscode.LanguageModelTextPart | vscode.LanguageModelToolCallPart)[] = [];
+		if (responseText) {
+			assistantParts.push(new vscode.LanguageModelTextPart(responseText));
+		}
+		assistantParts.push(...toolCalls);
+		lmMessages.push(vscode.LanguageModelChatMessage.Assistant(assistantParts));
+
+		const resultParts: vscode.LanguageModelToolResultPart[] = [];
+		for (const call of toolCalls) {
+			stream.progress(`Running \`${call.name}\``);
+			resultParts.push(await invokeToolSafely(call, request, token));
+		}
+		lmMessages.push(vscode.LanguageModelChatMessage.User(resultParts));
+	}
+
+	if (!token.isCancellationRequested) {
+		stream.markdown(`\n\n_Stopped after ${MAX_TOOL_ROUNDS} tool rounds._`);
+	}
+}
+
+async function handleChat(request: vscode.ChatRequest, context: vscode.ChatContext, stream: vscode.ChatResponseStream, token: vscode.CancellationToken): Promise<void> {
+	if (request.model) {
+		try {
+			await runAgentLoop(request, context, stream, token);
 			return;
 		} catch (err) {
 			stream.markdown(`Model \`${request.model.name}\` failed: ${err instanceof Error ? err.message : err}\n\nFalling back to local Ollama.\n\n`);
 		}
 	}
 
-	// Fallback: talk to Ollama directly using the configured model.
+	// Fallback: talk to Ollama directly using the configured model (no tools).
 	const { url, model } = getOllamaConfig();
-	const messages = [...history, { role: 'user' as const, content: request.prompt }];
+	const messages = [...historyToMessages(context), { role: 'user' as const, content: request.prompt }];
 	try {
-		await streamOllamaChat(url, model, messages, text => stream.markdown(text), token);
+		await streamOllamaChat(url, model, simpleToOllamaMessages(messages), { onText: text => stream.markdown(text) }, token);
 	} catch (err) {
 		if (err instanceof TypeError) {
 			stream.markdown(cannotReachOllama(url));
